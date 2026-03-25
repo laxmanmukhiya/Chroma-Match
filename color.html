@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChromaMatch – Color Memory Game</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ───────────────────────────────────────────────
+       CSS VARIABLES & RESET
+    ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #13131a;
+      --surface2:  #1c1c28;
+      --border:    #2a2a3d;
+      --accent:    #e8ff5a;
+      --accent2:   #ff5a8a;
+      --accent3:   #5affcc;
+      --text:      #f0f0f8;
+      --muted:     #6b6b8a;
+      --radius:    14px;
+      --font-head: 'Syne', sans-serif;
+      --font-mono: 'Space Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── NOISE TEXTURE OVERLAY ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 9999; opacity: .5;
+    }
+
+    /* ───────────────────────────────────────────────
+       LAYOUT
+    ─────────────────────────────────────────────── */
+    .app {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px 16px 60px;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 0 32px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+    .logo {
+      font-family: var(--font-head);
+      font-weight: 800; font-size: clamp(22px, 5vw, 36px);
+      letter-spacing: -1px;
+    }
+    .logo span { color: var(--accent); }
+
+    .header-stats {
+      display: flex; gap: 20px; align-items: center;
+    }
+    .stat-badge {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 12px;
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    .stat-badge .label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-badge .val { color: var(--accent); font-weight: 700; font-size: 16px; }
+
+    /* ── CONTROLS ROW ── */
+    .controls-row {
+      display: flex; flex-wrap: wrap; gap: 12px;
+      margin-bottom: 28px; align-items: center;
+    }
+    .pill-group {
+      display: flex; gap: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 40px; padding: 4px;
+    }
+    .pill-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-family: var(--font-mono);
+      font-size: 12px; padding: 6px 16px; border-radius: 40px;
+      transition: all .2s;
+    }
+    .pill-btn.active, .pill-btn:hover {
+      background: var(--accent); color: #000; font-weight: 700;
+    }
+
+    .label-tag {
+      font-size: 11px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 1px; padding-right: 4px;
+    }
+
+    /* ── MAIN GAME AREA ── */
+    .game-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 620px) {
+      .game-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--muted); display: flex; align-items: center; gap: 8px;
+    }
+    .panel-header .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    .panel-body { padding: 18px; }
+
+    /* ── COLOR DISPLAY ── */
+    .color-stage {
+      position: relative;
+      height: 180px;
+      border-radius: 10px;
+      overflow: hidden;
+      transition: opacity .4s;
+    }
+    .color-stage.hidden { opacity: 0; }
+
+    /* COUNTDOWN RING */
+    .countdown-wrap {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.35); backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none;
+      transition: opacity .3s;
+    }
+    .countdown-wrap.visible { opacity: 1; }
+    .countdown-ring-svg { transform: rotate(-90deg); }
+    .countdown-text {
+      position: absolute;
+      font-family: var(--font-head);
+      font-weight: 800; font-size: 48px;
+      color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.5);
+    }
+
+    /* ── USER INPUTS ── */
+    .input-group { margin-bottom: 16px; }
+    .input-group label {
+      display: flex; justify-content: space-between;
+      font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--muted); margin-bottom: 8px;
+    }
+    .input-group label span { color: var(--text); font-weight: 700; }
+
+    /* Color picker rows */
+    .color-row {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+    }
+    .color-row label { font-size: 12px; color: var(--muted); min-width: 60px; }
+    input[type="color"] {
+      width: 48px; height: 36px;
+      border: none; border-radius: 8px; cursor: pointer;
+      background: none; padding: 2px;
+    }
+    .color-hex {
+      font-family: var(--font-mono); font-size: 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 4px 10px; color: var(--muted);
+    }
+
+    /* Range sliders */
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none;
+      width: 100%; height: 4px; border-radius: 4px;
+      background: var(--border); cursor: pointer; outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--accent); border: 2px solid #000;
+      box-shadow: 0 0 8px rgba(232,255,90,.4);
+      transition: transform .15s, box-shadow .15s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.25);
+      box-shadow: 0 0 16px rgba(232,255,90,.6);
+    }
+    input[type="range"].r-slider { background: linear-gradient(to right, #200 0%, #f00 100%); }
+    input[type="range"].g-slider { background: linear-gradient(to right, #020 0%, #0f0 100%); }
+    input[type="range"].b-slider { background: linear-gradient(to right, #002 0%, #00f 100%); }
+
+    /* Angle slider */
+    .angle-preview-row {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .angle-wheel {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 2px solid var(--border); position: relative; flex-shrink: 0;
+    }
+    .angle-wheel::after {
+      content: '';
+      position: absolute; top: 50%; left: 50%;
+      width: 14px; height: 2px;
+      background: var(--accent); border-radius: 2px;
+      transform-origin: left center;
+      transform: translateY(-50%);
+    }
+
+    /* ── PREVIEW BOX ── */
+    .preview-box {
+      height: 80px; border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-top: 12px;
+      transition: background .1s;
+    }
+
+    /* ── ACTION BUTTONS ── */
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .btn {
+      font-family: var(--font-mono); font-size: 13px;
+      border: none; border-radius: 8px;
+      padding: 10px 22px; cursor: pointer;
+      transition: transform .15s, box-shadow .15s, background .15s;
+      font-weight: 700; letter-spacing: .5px;
+    }
+    .btn:active { transform: scale(.96); }
+
+    .btn-primary {
+      background: var(--accent); color: #000;
+    }
+    .btn-primary:hover { box-shadow: 0 0 20px rgba(232,255,90,.35); }
+
+    .btn-secondary {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+    .btn-danger {
+      background: transparent; color: var(--accent2);
+      border: 1px solid var(--accent2);
+    }
+    .btn-danger:hover { background: rgba(255,90,138,.1); }
+
+    /* ── RESULT PANEL ── */
+    #result-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+      display: none;
+      animation: slideIn .4s cubic-bezier(.22,1,.36,1);
+    }
+    #result-panel.visible { display: block; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .score-hero {
+      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .score-number {
+      font-family: var(--font-head);
+      font-weight: 800; font-size: clamp(48px, 10vw, 80px);
+      line-height: 1;
+    }
+    .score-label { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+    /* ACCURACY BAR */
+    .accuracy-bar-wrap {
+      flex: 1; min-width: 200px;
+    }
+    .bar-track {
+      height: 12px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 10px;
+      overflow: hidden; margin-bottom: 8px;
+    }
+    .bar-fill {
+      height: 100%; border-radius: 10px;
+      transition: width 1s cubic-bezier(.22,1,.36,1);
+      width: 0%;
+    }
+
+    /* STREAK BADGE */
+    .streak-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(255,90,138,.15);
+      border: 1px solid var(--accent2);
+      border-radius: 40px; padding: 6px 14px;
+      font-size: 13px; color: var(--accent2); font-weight: 700;
+    }
+
+    /* SWATCH COMPARE */
+    .swatch-row {
+      display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .swatch-item {
+      flex: 1; min-width: 120px;
+    }
+    .swatch-item .swatch-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+      color: var(--muted); margin-bottom: 6px;
+    }
+    .swatch {
+      height: 60px; border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    /* HINTS */
+    .hints-list {
+      list-style: none; display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .hint-chip {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 12px; font-size: 12px;
+      color: var(--text); display: flex; align-items: center; gap: 6px;
+    }
+    .hint-chip .ico { font-size: 14px; }
+
+    /* ── HISTORY ── */
+    #history-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .history-header {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+      color: var(--muted); margin-bottom: 14px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #history-list {
+      display: flex; flex-direction: column; gap: 8px;
+      max-height: 240px; overflow-y: auto;
+    }
+    #history-list::-webkit-scrollbar { width: 4px; }
+    #history-list::-webkit-scrollbar-track { background: var(--surface2); }
+    #history-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .history-item {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px;
+      animation: fadeRow .3s ease;
+    }
+    @keyframes fadeRow {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .h-swatch { width: 32px; height: 32px; border-radius: 6px; flex-shrink: 0; }
+    .h-info { flex: 1; }
+    .h-score { font-weight: 700; font-size: 18px; font-family: var(--font-head); }
+    .h-meta  { font-size: 11px; color: var(--muted); }
+    .h-mode  {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 1px;
+      padding: 3px 8px; border-radius: 4px;
+      background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+    }
+
+    /* ── EMPTY STATE ── */
+    .empty-state {
+      text-align: center; padding: 24px; color: var(--muted); font-size: 13px;
+    }
+
+    /* ── PHASE STATES ── */
+    .phase-overlay {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface);
+      border-radius: 10px;
+      font-family: var(--font-head); font-size: 16px;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 2px;
+      transition: opacity .3s;
+    }
+    .phase-overlay.hidden { opacity: 0; pointer-events: none; }
+
+    /* ── SCORE COLOR CODING ── */
+    .score-excellent { color: var(--accent3); }
+    .score-good      { color: var(--accent); }
+    .score-ok        { color: #ffaa44; }
+    .score-poor      { color: var(--accent2); }
+
+    /* ── TOOLTIP ── */
+    [data-tip] { position: relative; cursor: help; }
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%);
+      background: #1e1e2e; border: 1px solid var(--border);
+      color: var(--text); font-size: 11px; padding: 5px 10px; border-radius: 6px;
+      white-space: nowrap; pointer-events: none; opacity: 0;
+      transition: opacity .2s;
+    }
+    [data-tip]:hover::after { opacity: 1; }
+
+    /* ── RESPONSIVE TWEAKS ── */
+    @media (max-width: 480px) {
+      .controls-row { gap: 8px; }
+      .pill-btn { padding: 6px 12px; font-size: 11px; }
+      .btn { padding: 9px 16px; font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">Chroma<span>Match</span></div>
+    <div class="header-stats">
+      <div class="stat-badge">
+        <span class="label">Best</span>
+        <span class="val" id="best-score-display">—</span>
+      </div>
+      <div class="stat-badge">
+        <span class="label">Streak</span>
+        <span class="val" id="streak-display">0🔥</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTROLS ROW -->
+  <div class="controls-row">
+    <span class="label-tag">Mode</span>
+    <div class="pill-group" id="mode-group">
+      <button class="pill-btn active" data-mode="solid">Solid</button>
+      <button class="pill-btn" data-mode="gradient">Gradient</button>
+    </div>
+
+    <span class="label-tag">Difficulty</span>
+    <div class="pill-group" id="diff-group">
+      <button class="pill-btn active" data-diff="easy">Easy</button>
+      <button class="pill-btn" data-diff="medium">Medium</button>
+      <button class="pill-btn" data-diff="hard">Hard</button>
+    </div>
+
+    <span class="label-tag">Time</span>
+    <div class="pill-group" id="time-group">
+      <button class="pill-btn active" data-time="3">3s</button>
+      <button class="pill-btn" data-time="5">5s</button>
+      <button class="pill-btn" data-time="10">10s</button>
+    </div>
+  </div>
+
+  <!-- GAME GRID -->
+  <div class="game-grid">
+
+    <!-- LEFT: TARGET COLOR -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="dot" style="background:var(--accent)"></span>
+        Target Color
+      </div>
+      <div class="panel-body">
+        <div class="color-stage" id="target-stage">
+          <!-- Waiting state -->
+          <div class="phase-overlay" id="waiting-overlay">
+            Press Start ↓
+          </div>
+          <!-- Countdown ring overlay -->
+          <div class="countdown-wrap" id="countdown-wrap">
+            <svg class="countdown-ring-svg" width="80" height="80" viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="5"/>
+              <circle id="countdown-ring" cx="40" cy="40" r="34" fill="none"
+                stroke="#e8ff5a" stroke-width="5" stroke-linecap="round"
+                stroke-dasharray="213.6" stroke-dashoffset="0"
+                style="transition: stroke-dashoffset .1s linear;"/>
+            </svg>
+            <span class="countdown-text" id="countdown-num">3</span>
+          </div>
+        </div>
+        <div style="margin-top: 14px;">
+          <div class="btn-row">
+            <button class="btn btn-primary" id="start-btn">▶ Start Round</button>
+            <button class="btn btn-secondary" id="restart-btn">↺ Restart</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: USER INPUT -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="dot" style="background:var(--accent2)"></span>
+        Your Match
+      </div>
+      <div class="panel-body">
+
+        <!-- SOLID MODE INPUTS -->
+        <div id="solid-inputs">
+          <div class="input-group">
+            <label>Red <span id="r-val">128</span></label>
+            <input type="range" class="r-slider" id="r-slider" min="0" max="255" value="128" />
+          </div>
+          <div class="input-group">
+            <label>Green <span id="g-val">128</span></label>
+            <input type="range" class="g-slider" id="g-slider" min="0" max="255" value="128" />
+          </div>
+          <div class="input-group">
+            <label>Blue <span id="b-val">128</span></label>
+            <input type="range" class="b-slider" id="b-slider" min="0" max="255" value="128" />
+          </div>
+        </div>
+
+        <!-- GRADIENT MODE INPUTS -->
+        <div id="gradient-inputs" style="display:none">
+          <div class="color-row">
+            <label>Color 1</label>
+            <input type="color" id="g-color1" value="#ff5a8a" />
+            <span class="color-hex" id="g-color1-hex">#ff5a8a</span>
+          </div>
+          <div class="color-row">
+            <label>Color 2</label>
+            <input type="color" id="g-color2" value="#5affcc" />
+            <span class="color-hex" id="g-color2-hex">#5affcc</span>
+          </div>
+          <div class="input-group" style="margin-top:12px">
+            <label>Angle <span id="angle-val">90</span>°</label>
+            <div class="angle-preview-row">
+              <div class="angle-wheel" id="angle-wheel"></div>
+              <input type="range" id="angle-slider" min="0" max="360" value="90" style="flex:1" />
+            </div>
+          </div>
+        </div>
+
+        <!-- PREVIEW -->
+        <div class="preview-box" id="user-preview"></div>
+
+        <div style="margin-top:14px">
+          <button class="btn btn-primary" id="submit-btn" disabled>✓ Submit Match</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULT PANEL -->
+  <div id="result-panel">
+    <div class="score-hero">
+      <div>
+        <div class="score-number" id="score-display">—</div>
+        <div class="score-label">Match Accuracy</div>
+      </div>
+      <div class="accuracy-bar-wrap">
+        <div class="bar-track">
+          <div class="bar-fill" id="accuracy-bar"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--muted)">
+          <span>0%</span><span>50%</span><span>100%</span>
+        </div>
+      </div>
+      <div id="streak-badge-wrap"></div>
+    </div>
+
+    <!-- SWATCH COMPARE -->
+    <div class="swatch-row" id="swatch-compare"></div>
+
+    <!-- HINTS -->
+    <div style="margin-bottom: 16px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px;">
+        💡 How to improve
+      </div>
+      <ul class="hints-list" id="hints-list"></ul>
+    </div>
+  </div>
+
+  <!-- HISTORY PANEL -->
+  <div id="history-panel">
+    <div class="history-header">
+      Score History
+      <button class="btn btn-danger" id="clear-history-btn" style="padding:4px 12px; font-size:11px;">Clear</button>
+    </div>
+    <div id="history-list">
+      <div class="empty-state">No rounds played yet.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════ */
+const state = {
+  mode: 'solid',          // 'solid' | 'gradient'
+  difficulty: 'easy',     // 'easy' | 'medium' | 'hard'
+  displayTime: 3,         // seconds to show color
+  phase: 'idle',          // 'idle' | 'showing' | 'guessing' | 'result'
+  target: null,           // { r, g, b } or { c1, c2, angle }
+  streak: 0,
+  history: [],
+  bestScore: null,
+  countdownInterval: null,
+};
+
+/* ═══════════════════════════════════════════════════════════
+   DIFFICULTY CONFIG
+   Hard → shorter time (override displayTime), more complex colors
+═══════════════════════════════════════════════════════════ */
+const DIFF_CONFIG = {
+  easy:   { timeOverride: null, gradientComplex: false },
+  medium: { timeOverride: null, gradientComplex: false },
+  hard:   { timeOverride: 2,    gradientComplex: true  },
+};
+
+/* ═══════════════════════════════════════════════════════════
+   DOM REFS
+═══════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const targetStage    = $('target-stage');
+const waitingOverlay = $('waiting-overlay');
+const countdownWrap  = $('countdown-wrap');
+const countdownNum   = $('countdown-num');
+const countdownRing  = $('countdown-ring');
+const startBtn       = $('start-btn');
+const restartBtn     = $('restart-btn');
+const submitBtn      = $('submit-btn');
+const resultPanel    = $('result-panel');
+const userPreview    = $('user-preview');
+const historyList    = $('history-list');
+const scoreDisplay   = $('score-display');
+const accuracyBar    = $('accuracy-bar');
+const bestScoreEl    = $('best-score-display');
+const streakEl       = $('streak-display');
+const hintsEl        = $('hints-list');
+const swatchCompare  = $('swatch-compare');
+const streakBadgeEl  = $('streak-badge-wrap');
+
+// Solid inputs
+const rSlider = $('r-slider'), gSlider = $('g-slider'), bSlider = $('b-slider');
+const rVal = $('r-val'), gVal = $('g-val'), bVal = $('b-val');
+
+// Gradient inputs
+const gColor1  = $('g-color1'),  gColor2  = $('g-color2');
+const gColor1Hex = $('g-color1-hex'), gColor2Hex = $('g-color2-hex');
+const angleSlider = $('angle-slider');
+const angleVal    = $('angle-val');
+const angleWheel  = $('angle-wheel');
+
+/* ═══════════════════════════════════════════════════════════
+   UTILITY FUNCTIONS
+═══════════════════════════════════════════════════════════ */
+
+/** Random integer in [min, max] */
+const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+/** Random hex color string */
+const randHex = () => '#' + [0,0,0].map(() => randInt(0,255).toString(16).padStart(2,'0')).join('');
+
+/** Hex → {r, g, b} */
+function hexToRgb(hex) {
+  hex = hex.replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+  return {
+    r: parseInt(hex.slice(0,2),16),
+    g: parseInt(hex.slice(2,4),16),
+    b: parseInt(hex.slice(4,6),16),
+  };
+}
+
+/** {r,g,b} → hex string */
+function rgbToHex({r,g,b}) {
+  return '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+/** Build CSS background string from target */
+function targetToCss(t) {
+  if (t.type === 'solid') return `rgb(${t.r},${t.g},${t.b})`;
+  return `linear-gradient(${t.angle}deg, ${t.c1}, ${t.c2})`;
+}
+
+/** Build score color class */
+function scoreClass(s) {
+  if (s >= 90) return 'score-excellent';
+  if (s >= 70) return 'score-good';
+  if (s >= 50) return 'score-ok';
+  return 'score-poor';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SCORING ALGORITHM
+   ─────────────────────────────────────────────────────────
+   SOLID COLOR:
+     Euclidean distance in RGB space.
+     Max possible distance = √(255²+255²+255²) ≈ 441.67
+     Score = (1 − dist/441.67) × 100
+
+   GRADIENT:
+     Score = average of:
+       • color1 score  (Euclidean, 33.3%)
+       • color2 score  (Euclidean, 33.3%)
+       • angle score   (33.3%)
+         angle_diff = min(|a1-a2|, 360-|a1-a2|)   [wraps around]
+         angle_score = (1 - angle_diff/180) × 100
+═══════════════════════════════════════════════════════════ */
+const MAX_RGB_DIST = Math.sqrt(3 * 255 * 255); // ≈ 441.67
+
+function colorScore(c1, c2) {
+  const dr = c1.r - c2.r, dg = c1.g - c2.g, db = c1.b - c2.b;
+  const dist = Math.sqrt(dr*dr + dg*dg + db*db);
+  return Math.max(0, (1 - dist / MAX_RGB_DIST) * 100);
+}
+
+function angleScore(a1, a2) {
+  const diff = Math.abs(a1 - a2);
+  const wrapped = Math.min(diff, 360 - diff); // wraps around 360
+  return Math.max(0, (1 - wrapped / 180) * 100);
+}
+
+function computeScore(target, userAnswer) {
+  if (target.type === 'solid') {
+    return {
+      total: colorScore(target, userAnswer.color),
+      c1Score: null, c2Score: null, aScore: null,
+    };
+  }
+  // Gradient
+  const tc1 = hexToRgb(target.c1), tc2 = hexToRgb(target.c2);
+  const uc1 = hexToRgb(userAnswer.c1), uc2 = hexToRgb(userAnswer.c2);
+  const s1 = colorScore(tc1, uc1);
+  const s2 = colorScore(tc2, uc2);
+  const sa = angleScore(target.angle, userAnswer.angle);
+  return {
+    total: (s1 + s2 + sa) / 3,
+    c1Score: s1, c2Score: s2, aScore: sa,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HINT GENERATION
+   Uses per-channel RGB differences to give beginner-friendly
+   improvement suggestions.
+═══════════════════════════════════════════════════════════ */
+function generateHints(target, userAnswer) {
+  const hints = [];
+
+  function channelHints(tColor, uColor, label) {
+    const t = hexToRgb(typeof tColor === 'string' ? tColor : rgbToHex(tColor));
+    const u = hexToRgb(typeof uColor === 'string' ? uColor : rgbToHex(uColor));
+    const dR = t.r - u.r, dG = t.g - u.g, dB = t.b - u.b;
+    const threshold = 15;
+
+    if (Math.abs(dR) > threshold)
+      hints.push({ ico: '🔴', text: `${label}: ${dR > 0 ? 'Increase' : 'Reduce'} Red by ~${Math.abs(dR)}` });
+    if (Math.abs(dG) > threshold)
+      hints.push({ ico: '🟢', text: `${label}: ${dG > 0 ? 'Increase' : 'Reduce'} Green by ~${Math.abs(dG)}` });
+    if (Math.abs(dB) > threshold)
+      hints.push({ ico: '🔵', text: `${label}: ${dB > 0 ? 'Increase' : 'Reduce'} Blue by ~${Math.abs(dB)}` });
+  }
+
+  if (target.type === 'solid') {
+    channelHints(target, userAnswer.color, '');
+  } else {
+    channelHints(target.c1, userAnswer.c1, 'Color 1');
+    channelHints(target.c2, userAnswer.c2, 'Color 2');
+    const diff = Math.abs(target.angle - userAnswer.angle);
+    const wrapped = Math.min(diff, 360 - diff);
+    if (wrapped > 10) {
+      const dir = ((target.angle - userAnswer.angle + 360) % 360) < 180 ? 'clockwise' : 'counter-clockwise';
+      hints.push({ ico: '🔄', text: `Rotate gradient ${dir} by ~${Math.round(wrapped)}°` });
+    }
+  }
+
+  // Brightness hint
+  if (target.type === 'solid') {
+    const tBright = (target.r + target.g + target.b) / 3;
+    const uRgb = userAnswer.color;
+    const uBright = (uRgb.r + uRgb.g + uRgb.b) / 3;
+    if (Math.abs(tBright - uBright) > 30)
+      hints.push({ ico: '💡', text: tBright > uBright ? 'Increase overall brightness' : 'Reduce overall brightness' });
+  }
+
+  if (hints.length === 0) hints.push({ ico: '✨', text: "Excellent match! Barely any difference." });
+  return hints;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TARGET GENERATION
+═══════════════════════════════════════════════════════════ */
+function generateTarget() {
+  if (state.mode === 'solid') {
+    const r = randInt(0,255), g = randInt(0,255), b = randInt(0,255);
+    return { type: 'solid', r, g, b };
+  }
+  // Gradient
+  return {
+    type: 'gradient',
+    c1: randHex(),
+    c2: randHex(),
+    angle: randInt(0, 360),
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   USER ANSWER READER
+═══════════════════════════════════════════════════════════ */
+function readUserAnswer() {
+  if (state.mode === 'solid') {
+    return { color: { r: +rSlider.value, g: +gSlider.value, b: +bSlider.value } };
+  }
+  return {
+    c1: gColor1.value,
+    c2: gColor2.value,
+    angle: +angleSlider.value,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SOUND EFFECTS (Web Audio API — no external files)
+═══════════════════════════════════════════════════════════ */
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, type, duration, gainVal = 0.15) {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(gainVal, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch(e) {}
+}
+
+function playSuccess(score) {
+  if (score >= 90) {
+    // Happy chord
+    [523, 659, 784].forEach((f,i) => setTimeout(() => playTone(f,'sine',.4,.1), i*80));
+  } else if (score >= 60) {
+    playTone(440, 'sine', .3);
+  } else {
+    playTone(220, 'sawtooth', .2, .08);
+  }
+}
+
+function playBeep() { playTone(880, 'square', .08, .05); }
+
+/* ═══════════════════════════════════════════════════════════
+   COUNTDOWN RING ANIMATION
+   Uses SVG stroke-dashoffset to draw a shrinking arc.
+   Full circle circumference = 2π×34 ≈ 213.6
+═══════════════════════════════════════════════════════════ */
+const CIRCUMFERENCE = 2 * Math.PI * 34; // ≈ 213.6
+
+function startCountdown(seconds, onDone) {
+  countdownWrap.classList.add('visible');
+  countdownNum.textContent = seconds;
+  countdownRing.style.strokeDashoffset = '0';
+
+  let elapsed = 0;
+  const TICK = 100; // ms
+  const totalTicks = (seconds * 1000) / TICK;
+
+  clearInterval(state.countdownInterval);
+  state.countdownInterval = setInterval(() => {
+    elapsed++;
+    const progress = elapsed / totalTicks;
+    countdownRing.style.strokeDashoffset = (progress * CIRCUMFERENCE).toString();
+
+    const remaining = Math.ceil(seconds - (elapsed * TICK / 1000));
+    if (remaining !== +countdownNum.textContent) {
+      countdownNum.textContent = remaining;
+      if (remaining <= 2) playBeep();
+    }
+
+    if (elapsed >= totalTicks) {
+      clearInterval(state.countdownInterval);
+      countdownWrap.classList.remove('visible');
+      onDone();
+    }
+  }, TICK);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GAME PHASES
+═══════════════════════════════════════════════════════════ */
+
+/** PHASE 1: Show the target color */
+function phaseShow() {
+  state.phase = 'showing';
+  state.target = generateTarget();
+
+  // Apply to stage
+  targetStage.style.background = targetToCss(state.target);
+  waitingOverlay.classList.add('hidden');
+  submitBtn.disabled = true;
+  resultPanel.classList.remove('visible');
+
+  const cfg = DIFF_CONFIG[state.difficulty];
+  const time = cfg.timeOverride ?? state.displayTime;
+
+  startCountdown(time, phaseGuess);
+}
+
+/** PHASE 2: Hide color, let user guess */
+function phaseGuess() {
+  state.phase = 'guessing';
+  // Fade out the target
+  targetStage.style.transition = 'background .5s';
+  targetStage.style.background = 'var(--surface2)';
+
+  // Re-add "hidden" overlay
+  waitingOverlay.textContent = 'Guess now ';
+  waitingOverlay.classList.remove('hidden');
+
+  submitBtn.disabled = false;
+  startBtn.disabled = true;
+}
+
+/** PHASE 3: Show result */
+function phaseResult() {
+  state.phase = 'result';
+  submitBtn.disabled = true;
+  startBtn.disabled = false;
+
+  const answer = readUserAnswer();
+  const { total, c1Score, c2Score, aScore } = computeScore(state.target, answer);
+  const roundScore = Math.round(total);
+
+  // Update streak
+  if (roundScore >= 70) {
+    state.streak++;
+  } else {
+    state.streak = 0;
+  }
+
+  // Best score
+  if (state.bestScore === null || roundScore > state.bestScore) {
+    state.bestScore = roundScore;
+  }
+
+  // Save to history
+  const entry = {
+    score: roundScore,
+    mode: state.mode,
+    difficulty: state.difficulty,
+    target: state.target,
+    timestamp: Date.now(),
+  };
+  state.history.unshift(entry);
+  if (state.history.length > 20) state.history.pop(); // keep last 20
+  persistState();
+
+  // ── RENDER RESULT PANEL ──
+  resultPanel.classList.add('visible');
+
+  scoreDisplay.textContent = roundScore + '%';
+  scoreDisplay.className = 'score-number ' + scoreClass(roundScore);
+
+  // Progress bar
+  requestAnimationFrame(() => {
+    accuracyBar.style.width = roundScore + '%';
+    const hue = (roundScore / 100) * 120; // 0=red, 120=green
+    accuracyBar.style.background = `hsl(${hue},80%,55%)`;
+  });
+
+  // Streak badge
+  streakBadgeEl.innerHTML = state.streak >= 2
+    ? `<div class="streak-badge">🔥 ${state.streak} Streak!</div>` : '';
+
+  // Swatch compare
+  renderSwatches(answer);
+
+  // Hints
+  const hints = generateHints(state.target, answer);
+  hintsEl.innerHTML = hints.map(h =>
+    `<li class="hint-chip"><span class="ico">${h.ico}</span>${h.text}</li>`
+  ).join('');
+
+  // Update header
+  updateHeaderStats();
+
+  // Render history
+  renderHistory();
+
+  // Sound
+  playSuccess(roundScore);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SWATCH RENDERING
+═══════════════════════════════════════════════════════════ */
+function renderSwatches(answer) {
+  if (state.target.type === 'solid') {
+    const tBg = targetToCss(state.target);
+    const uBg = `rgb(${answer.color.r},${answer.color.g},${answer.color.b})`;
+    swatchCompare.innerHTML = `
+      <div class="swatch-item">
+        <div class="swatch-label">Original</div>
+        <div class="swatch" style="background:${tBg}"></div>
+      </div>
+      <div class="swatch-item">
+        <div class="swatch-label">Your Answer</div>
+        <div class="swatch" style="background:${uBg}"></div>
+      </div>`;
+  } else {
+    const tBg = targetToCss(state.target);
+    const uBg = `linear-gradient(${answer.angle}deg, ${answer.c1}, ${answer.c2})`;
+    swatchCompare.innerHTML = `
+      <div class="swatch-item">
+        <div class="swatch-label">Original Gradient</div>
+        <div class="swatch" style="background:${tBg}"></div>
+      </div>
+      <div class="swatch-item">
+        <div class="swatch-label">Your Gradient</div>
+        <div class="swatch" style="background:${uBg}"></div>
+      </div>`;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HISTORY RENDERING
+═══════════════════════════════════════════════════════════ */
+function renderHistory() {
+  if (state.history.length === 0) {
+    historyList.innerHTML = '<div class="empty-state">No rounds played yet.</div>';
+    return;
+  }
+  historyList.innerHTML = state.history.map((entry, i) => {
+    const bg = entry.target.type === 'solid'
+      ? `rgb(${entry.target.r},${entry.target.g},${entry.target.b})`
+      : `linear-gradient(${entry.target.angle}deg, ${entry.target.c1}, ${entry.target.c2})`;
+    const time = new Date(entry.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    return `
+      <div class="history-item">
+        <div class="h-swatch" style="background:${bg}"></div>
+        <div class="h-info">
+          <div class="h-score ${scoreClass(entry.score)}">${entry.score}%</div>
+          <div class="h-meta">${time} · ${entry.difficulty}</div>
+        </div>
+        <span class="h-mode">${entry.mode}</span>
+      </div>`;
+  }).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UPDATE USER PREVIEW
+═══════════════════════════════════════════════════════════ */
+function updateUserPreview() {
+  if (state.mode === 'solid') {
+    const r = rSlider.value, g = gSlider.value, b = bSlider.value;
+    rVal.textContent = r; gVal.textContent = g; bVal.textContent = b;
+    userPreview.style.background = `rgb(${r},${g},${b})`;
+  } else {
+    const a = angleSlider.value;
+    angleVal.textContent = a;
+    // Rotate the wheel needle
+    angleWheel.style.setProperty('--wheel-angle', a + 'deg');
+    angleWheel.querySelector ? null : null; // handled via ::after + CSS var trick below
+    gColor1Hex.textContent = gColor1.value;
+    gColor2Hex.textContent = gColor2.value;
+    userPreview.style.background =
+      `linear-gradient(${a}deg, ${gColor1.value}, ${gColor2.value})`;
+  }
+}
+
+// Angle wheel uses CSS variable for the needle rotation
+const styleTag = document.createElement('style');
+styleTag.textContent = `#angle-wheel { --wheel-angle: 90deg; }
+#angle-wheel::after { transform: translateY(-50%) rotate(var(--wheel-angle)); }`;
+document.head.appendChild(styleTag);
+
+// Hook updateUserPreview to angleWheel dynamically
+function updateAngleWheel(deg) {
+  angleWheel.style.cssText += `--wheel-angle: ${deg}deg`;
+  angleWheel.style.setProperty('--wheel-angle', deg + 'deg');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PERSISTENCE (localStorage)
+═══════════════════════════════════════════════════════════ */
+function persistState() {
+  try {
+    localStorage.setItem('chromamatch_history', JSON.stringify(state.history));
+    localStorage.setItem('chromamatch_best', JSON.stringify(state.bestScore));
+    localStorage.setItem('chromamatch_streak', JSON.stringify(state.streak));
+  } catch(e) {}
+}
+
+function loadState() {
+  try {
+    const h = localStorage.getItem('chromamatch_history');
+    const b = localStorage.getItem('chromamatch_best');
+    const s = localStorage.getItem('chromamatch_streak');
+    if (h) state.history = JSON.parse(h);
+    if (b) state.bestScore = JSON.parse(b);
+    if (s) state.streak = JSON.parse(s);
+  } catch(e) {}
+}
+
+function updateHeaderStats() {
+  bestScoreEl.textContent = state.bestScore !== null ? state.bestScore + '%' : '—';
+  streakEl.textContent = state.streak + (state.streak > 0 ? '🔥' : '');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MODE SWITCHING
+═══════════════════════════════════════════════════════════ */
+function setMode(mode) {
+  state.mode = mode;
+  $('solid-inputs').style.display    = mode === 'solid'    ? 'block' : 'none';
+  $('gradient-inputs').style.display = mode === 'gradient' ? 'block' : 'none';
+  updateUserPreview();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   EVENT LISTENERS
+═══════════════════════════════════════════════════════════ */
+
+// Mode buttons
+document.querySelectorAll('#mode-group .pill-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#mode-group .pill-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    setMode(btn.dataset.mode);
+  });
+});
+
+// Difficulty buttons
+document.querySelectorAll('#diff-group .pill-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#diff-group .pill-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.difficulty = btn.dataset.diff;
+    // Hard mode forces gradient
+    if (state.difficulty === 'hard') {
+      document.querySelector('#mode-group [data-mode="gradient"]').click();
+    }
+  });
+});
+
+// Time buttons
+document.querySelectorAll('#time-group .pill-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#time-group .pill-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.displayTime = +btn.dataset.time;
+  });
+});
+
+// Solid sliders
+[rSlider, gSlider, bSlider].forEach(s => s.addEventListener('input', updateUserPreview));
+
+// Gradient inputs
+[gColor1, gColor2, angleSlider].forEach(el => {
+  el.addEventListener('input', () => {
+    if (angleSlider === el) updateAngleWheel(angleSlider.value);
+    updateUserPreview();
+  });
+});
+
+// Start button
+startBtn.addEventListener('click', () => {
+  if (state.phase === 'idle' || state.phase === 'result') {
+    startBtn.disabled = true;
+    phaseShow();
+  }
+});
+
+// Restart button
+restartBtn.addEventListener('click', () => {
+  clearInterval(state.countdownInterval);
+  countdownWrap.classList.remove('visible');
+  targetStage.style.background = 'var(--surface2)';
+  targetStage.style.transition = '';
+  waitingOverlay.textContent = 'Press Start ↓';
+  waitingOverlay.classList.remove('hidden');
+  submitBtn.disabled = true;
+  startBtn.disabled = false;
+  resultPanel.classList.remove('visible');
+  state.phase = 'idle';
+});
+
+// Submit button
+submitBtn.addEventListener('click', () => {
+  if (state.phase === 'guessing') phaseResult();
+});
+
+// Clear history
+$('clear-history-btn').addEventListener('click', () => {
+  state.history = [];
+  state.streak = 0;
+  state.bestScore = null;
+  persistState();
+  updateHeaderStats();
+  renderHistory();
+  streakBadgeEl.innerHTML = '';
+});
+
+/* ═══════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════ */
+(function init() {
+  loadState();
+  updateHeaderStats();
+  updateUserPreview();
+  renderHistory();
+  // Initialise angle wheel
+  updateAngleWheel(90);
+})();
+</script>
+</body>
+</html>
