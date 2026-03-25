@@ -417,6 +417,27 @@
     }
     [data-tip]:hover::after { opacity: 1; }
 
+    /* ── INPUT LOCK (during countdown) ── */
+    .inputs-locked {
+      position: relative;
+      pointer-events: none;   /* blocks all clicks/drags */
+    }
+    .inputs-locked::after {
+      content: '👁 Memorise the colour!';
+      position: absolute; inset: 0;
+      background: rgba(10,10,15,.75);
+      backdrop-filter: blur(3px);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-head); font-size: 15px; font-weight: 600;
+      color: var(--accent); letter-spacing: 1px;
+      animation: pulseLock 1.2s ease-in-out infinite;
+    }
+    @keyframes pulseLock {
+      0%, 100% { opacity: .85; }
+      50%       { opacity: 1;   }
+    }
+
     /* ── RESPONSIVE TWEAKS ── */
     @media (max-width: 480px) {
       .controls-row { gap: 8px; }
@@ -508,7 +529,7 @@
         <span class="dot" style="background:var(--accent2)"></span>
         Your Match
       </div>
-      <div class="panel-body">
+      <div class="panel-body" id="guess-panel-body">
 
         <!-- SOLID MODE INPUTS -->
         <div id="solid-inputs">
@@ -915,6 +936,9 @@ function phaseShow() {
   submitBtn.disabled = true;
   resultPanel.classList.remove('visible');
 
+  // Lock the guess panel so the player can't peek/adjust during countdown
+  $('guess-panel-body').classList.add('inputs-locked');
+
   const cfg = DIFF_CONFIG[state.difficulty];
   const time = cfg.timeOverride ?? state.displayTime;
 
@@ -929,8 +953,11 @@ function phaseGuess() {
   targetStage.style.background = 'var(--surface2)';
 
   // Re-add "hidden" overlay
-  waitingOverlay.textContent = 'Guess now ';
+  waitingOverlay.textContent = '🫣 Guess now!';
   waitingOverlay.classList.remove('hidden');
+
+  // Unlock the guess panel now that the colour is hidden
+  $('guess-panel-body').classList.remove('inputs-locked');
 
   submitBtn.disabled = false;
   startBtn.disabled = true;
@@ -1197,6 +1224,7 @@ restartBtn.addEventListener('click', () => {
   submitBtn.disabled = true;
   startBtn.disabled = false;
   resultPanel.classList.remove('visible');
+  $('guess-panel-body').classList.remove('inputs-locked'); // always unlock on restart
   state.phase = 'idle';
 });
 
